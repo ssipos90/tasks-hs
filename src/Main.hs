@@ -1,60 +1,122 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, NamedFieldPuns #-}
 
 module Main where
 
-import System.IO
-import Data.Char(digitToInt)
+import           Text.Read                      ( readEither )
+import           System.IO
+import           Data.Char                      ( digitToInt )
+import           Data.Either                    ( isLeft )
+import           Control.Monad                  ((>=>))
 
-data Todo = Todo String Int Bool deriving (Show)
+data ActionSuccess = ActionSuccess String [Todo]
+type Error = String
+type ActionFn = [Todo] -> String -> Either Error ActionSuccess
 
-data Action = Action String ([Todo] -> String -> [Todo]) String
+data Todo = Todo { todoTask :: String
+                 , todoDone :: Bool
+                 } deriving (Show)
+
+data Action = Action { actionCommand :: String
+                     , actionFn :: ActionFn
+                     , actionExample :: String
+                     }
+
+serializeTodos :: [Todo] -> String
+serializeTodos = unlines . map serializeTodo
+
+serializeTodo :: Todo -> String
+serializeTodo Todo { todoTask, todoDone } = undefined
+
+showTodo :: Todo -> String
+showTodo Todo { todoTask, todoDone } = "[" ++ showDone todoDone ++ "] " ++ todoTask
+
+showTodos :: [Todo] -> String
+showTodos = unlines . map (\(n, todo) -> show n ++ ". " ++ showTodo todo) . zip [1..]
+
+showDone :: Bool -> String
+showDone False = " "
+showDone True = "x"
 
 parseTodo :: String -> Todo
-parseTodo (p:d:_:task) = Todo task (digitToInt p) (d == '1')
+parseTodo (d : _ : task) = Todo task (d == '1')
 
 parseTodos :: String -> [Todo]
 parseTodos = map parseTodo . lines
 
-create :: [Todo] -> String -> [Todo]
-create = undefined
+create :: [Todo] -> String -> Either Error ActionSuccess
+create todos params = Right (ActionSuccess "created task" (todos ++ [Todo { todoTask = params, todoDone = False }]))
 
-mark :: [Todo] -> String -> [Todo]
-mark = undefined
+mark :: [Todo] -> String -> Either Error ActionSuccess
+mark [] _ = Left "Error, empty list, bro!"
+mark todos nStr = either Left (markHelper todos) (readEither nStr)
 
-unmark :: [Todo] -> String -> [Todo]
+markHelper :: [Todo] -> Int -> Either Error ActionSuccess
+markHelper todos n = either Left (ActionSuccess "E gata, ah?") (updateTodoAt n (markTodo True) todos)
+
+updateTodoAt :: Int -> (Todo -> Todo) -> [Todo] -> Either Error [Todo]
+updateTodoAt k fn todos
+                | n < 1 = Left "Must be a strict positive, bruh!"
+                | n > length todos = Left "Where are you goin, mate?"
+                | otherwise = take (k-1) ++ fn!!(k-1) ++ drop k-1
+
+markTodo :: Bool -> Todo -> Either Error Todo
+markTodo as (Todo task done) = if done == as then Left "Noop!" else Todo task as
+
+unmark :: [Todo] -> String -> Either Error ActionSuccess
 unmark = undefined
 
-priority :: [Todo] -> String -> [Todo]
+priority :: [Todo] -> String -> Either Error ActionSuccess
 priority = undefined
 
 showAction :: Action -> String
-showAction (Action command _ example) = command ++ " - eg: " ++ example
+showAction Action { actionCommand, actionExample } =
+  actionCommand ++ " - eg: " ++ actionExample
 
 matchesAction :: Action -> String -> Bool
-matchesAction (Action c) command = c == command
+matchesAction Action { actionCommand } command = actionCommand == command
 
 findAction :: [Action] -> String -> Maybe Action
+
 findAction [] _ = Nothing
-findAction (a:xs) command = if matchesAction a command then a else findAction xs command
+findAction (action : xs) command =
+  if matchesAction action command then Just action else findAction xs command
 
 parseAction :: [Action] -> String -> (String, Maybe Action)
-parseAction actions command = (rest, findAction actions cmd)
-            where (cmd:rest) = words command
+parseAction actions command = (unwords rest, findAction actions cmd)
+  where (cmd : rest) = words command
 
-actions = [ Action "create" create "create \"Fuuuu....\""
-          , Action "mark" mark "mark x"
-          , Action "unmark" unmark "unmark x"
-          , Action "priority" priority "priority x p"
-          ]
+runAction :: Maybe Action -> [Todo] -> String -> IO [Todo]
+runAction Nothing todos _ = runActionHelper "Invalid action" todos
+runAction (Just Action{actionFn}) todos params =
+  either
+    (`runActionHelper` todos)
+    (\(ActionSuccess msg todos) -> runActionHelper msg todos)
+    $ actionFn todos params
 
-handleFile :: Handle -> IO ()
-handleFile h = do
-            content <- hGetContents h
-            putStrLn $ show $ parseTodos content
-            putStrLn $ unlines $ map showAction actions
-            
+runActionHelper :: String -> [Todo] -> IO [Todo]
+runActionHelper s todos = putStrLn s >> return todos
+
+runner :: ([Todo] -> IO ()) -> [Todo] -> IO ()
+runner saveTodos todos = do
+  putStrLn $ "\n" ++ showTodos todos
+  putStrLn $ unlines $ map showAction actions
+  command <- getLine
+  let (rest, a) = parseAction actions command
+  newTodos <- runAction a todos rest
+  runner saveTodos newTodos
+  where
+    actions =
+      [ Action "create"   create   "create \"Fuuuu....\""
+      , Action "mark"     mark     "mark x"
+      , Action "unmark"   unmark   "unmark x"
+      , Action "priority" priority "priority x p"
+      ]
+
+saveTodosToFile :: FilePath -> [Todo] -> IO ()
+saveTodosToFile path = writeFile path . serializeTodos
 
 main :: IO ()
 main = do
-  withFile "todos.txt" ReadWriteMode handleFile
-
+  h <- openFile "todos.txt" ReadMode
+  content <- hGetContents h
+  runner (saveTodosToFile "todos.txt") (parseTodos content)
