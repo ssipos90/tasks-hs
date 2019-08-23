@@ -5,7 +5,8 @@ module Main where
 import           Text.Read                      ( readEither )
 import           System.IO
 import           Data.Char                      ( digitToInt )
-import           Data.Either                    ( isLeft )
+import           Data.Either                    ( isLeft, fromLeft, fromRight )
+import           Data.List                      ( take, drop )
 import           Control.Monad                  ((>=>))
 
 data ActionSuccess = ActionSuccess String [Todo]
@@ -48,19 +49,25 @@ create todos params = Right (ActionSuccess "created task" (todos ++ [Todo { todo
 
 mark :: [Todo] -> String -> Either Error ActionSuccess
 mark [] _ = Left "Error, empty list, bro!"
-mark todos nStr = either Left (markHelper todos) (readEither nStr)
+mark todos nStr = fmap (markHelper todos) (readEither nStr)
+
+-- fmap :: (a -> b) -> f a -> f b 
 
 markHelper :: [Todo] -> Int -> Either Error ActionSuccess
-markHelper todos n = either Left (ActionSuccess "E gata, ah?") (updateTodoAt n (markTodo True) todos)
+markHelper todos n = fmap (ActionSuccess "E gata, ah?") (updateTodoAt n (markTodo True) todos)
 
-updateTodoAt :: Int -> (Todo -> Todo) -> [Todo] -> Either Error [Todo]
+updateTodoAt :: Int -> (Todo -> Either Error Todo) -> [Todo] -> Either Error [Todo]
 updateTodoAt k fn todos
-                | n < 1 = Left "Must be a strict positive, bruh!"
-                | n > length todos = Left "Where are you goin, mate?"
-                | otherwise = take (k-1) ++ fn!!(k-1) ++ drop k-1
+                | k < 1 = Left "Must be a strict positive, bruh!"
+                | k > length todos = Left "Where are you goin, mate?"
+                | otherwise = fuuu (k-1) (fn (todos!!(k-1))) todos
+
+fuuu :: Int -> Either Error Todo -> [Todo] -> Either Error [Todo]
+fuuu _ (Left e) _ = Left e
+fuuu k (Right todo) todos = Right(take k todos ++ [todo] ++ drop (k+1) todos)
 
 markTodo :: Bool -> Todo -> Either Error Todo
-markTodo as (Todo task done) = if done == as then Left "Noop!" else Todo task as
+markTodo as (Todo task done) = if done == as then Left "Noop!" else Right Todo { todoTask=task, todoDone=as }
 
 unmark :: [Todo] -> String -> Either Error ActionSuccess
 unmark = undefined
@@ -106,7 +113,7 @@ runner saveTodos todos = do
   runner saveTodos newTodos
   where
     actions =
-      [ Action "create"   create   "create \"Fuuuu....\""
+      [ Action "create"   create   "create Fuuuu your mum...."
       , Action "mark"     mark     "mark x"
       , Action "unmark"   unmark   "unmark x"
       , Action "priority" priority "priority x p"
