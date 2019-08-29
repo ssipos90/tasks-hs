@@ -52,6 +52,7 @@ create todos params = Right (ActionSuccess "created task" (todos ++ [Todo { todo
 
 mark :: [Todo] -> Text -> Either Error ActionSuccess
 mark [] _ = Left "Error, empty list, bro!"
+<<<<<<< HEAD
 mark todos nStr = either (Left . pack) (markHelper todos . fst) (decimal nStr)
 
 -- fmap :: (a -> b) -> f a -> f b 
@@ -59,10 +60,16 @@ mark todos nStr = either (Left . pack) (markHelper todos . fst) (decimal nStr)
 markHelper :: [Todo] -> Int -> Either Error ActionSuccess
 markHelper todos n = fmap (ActionSuccess "E gata, ah?") (updateTodoAt n (markTodo True) todos)
 
+=======
+mark todos nStr = either Left (fmap (ActionSuccess "E gata, ah?") . markHelper todos) (readEither nStr)
+                where markHelper todos n = updateTodoAt n (markTodo True) todos
+
+>>>>>>> master
 updateTodoAt :: Int -> (Todo -> Either Error Todo) -> [Todo] -> Either Error [Todo]
 updateTodoAt k fn todos
                 | k < 1 = Left "Must be a strict positive, bruh!"
                 | k > length todos = Left "Where are you goin, mate?"
+<<<<<<< HEAD
                 | otherwise = fuuu (k-1) (fn (todos!!(k-1))) todos
 
 fuuu :: Int -> Either Error Todo -> [Todo] -> Either Error [Todo]
@@ -71,6 +78,15 @@ fuuu k (Right todo) todos = Right(take k todos ++ [todo] ++ drop (k+1) todos)
 
 markTodo :: Bool -> Todo -> Either Error Todo
 markTodo as (Todo task done) = if done == as then Left "Noop!" else Right Todo { todoTask=task, todoDone=as }
+=======
+                | otherwise = either Left (applyActionOnTodo todos k) (fn (todos!!(k-1)))
+
+applyActionOnTodo :: [Todo] -> Int -> Todo -> Either Error [Todo]
+applyActionOnTodo todos k todo = Right(take k todos ++ [todo] ++ drop (k+1) todos)
+
+markTodo :: Bool -> Todo -> Either Error Todo
+markTodo as (Todo task done) = if done == as then Left "Noop!" else Right (Todo task as)
+>>>>>>> master
 
 unmark :: [Todo] -> Text -> Either Error ActionSuccess
 unmark = undefined
@@ -126,6 +142,18 @@ saveTodosToFile :: FilePath -> [Todo] -> IO ()
 saveTodosToFile path = writeFile path . serializeTodos
 
 main :: IO ()
+-- main = do
+--   h <- openFile "todos.txt" ReadMode
+--   content <- hGetContents h
+--   hClose h
+--   runner (saveTodosToFile "todos.txt") (parseTodos content)
 main = do
+<<<<<<< HEAD
   content <- readFile "todos.txt"
   runner (saveTodosToFile "todos.txt") (parseTodos content)
+=======
+  h <- openFile "range.txt" ReadMode
+  content <- hGetContents h
+  mapM_ putStrLn $ lines content
+  hClose h
+>>>>>>> master
