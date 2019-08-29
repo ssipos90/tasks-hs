@@ -2,12 +2,13 @@ module Main where
 
 import           Protolude
 import           Control.Monad                  ((>=>))
+import           Data.Char                      ( digitToInt )
 import           Data.Either                    ( isLeft, fromLeft, fromRight )
 import           Data.List                      ( (!!) )
-import           Data.Char                      ( digitToInt )
-import           Text.Read                      ( readEither )
-import           Data.Text                      ( words, unwords, lines, unlines )
-import           System.IO                      ( hGetContents )
+import           Data.Text                      as T ( words, unwords, lines, unlines, pack, head, tail, concat )
+import           Data.Text.IO                   ( readFile )
+import           Data.Text.Read                 ( decimal )
+import           System.IO                      (IO)
 
 data ActionSuccess = ActionSuccess Text [Todo]
 type Error = Text
@@ -26,20 +27,22 @@ serializeTodos :: [Todo] -> Text
 serializeTodos = unlines . map serializeTodo
 
 serializeTodo :: Todo -> Text
-serializeTodo Todo { todoTask, todoDone } = undefined
+serializeTodo Todo { todoTask, todoDone } = T.concat [show todoDone , ":", todoTask]
 
 showTodo :: Todo -> Text
-showTodo Todo { todoTask, todoDone } = "[" ++ showDone todoDone ++ "] " ++ todoTask
+showTodo Todo { todoTask, todoDone } = T.concat ["[", showDone todoDone, "] ", todoTask]
 
 showTodos :: [Todo] -> Text
-showTodos = unlines . map (\(n, todo) -> show n ++ ". " ++ showTodo todo) . zip [1..]
+showTodos = unlines . map (\(n, todo) -> T.concat [show n, ". ", showTodo todo]) . zip [1..]
 
 showDone :: Bool -> Text
 showDone False = " "
 showDone True = "x"
 
 parseTodo :: Text -> Todo
-parseTodo (d : _ : task) = Todo task (d == '1')
+parseTodo str = Todo task (d == '1')
+          where d = T.head str
+                task = T.tail str
 
 parseTodos :: Text -> [Todo]
 parseTodos = map parseTodo . lines
@@ -49,7 +52,7 @@ create todos params = Right (ActionSuccess "created task" (todos ++ [Todo { todo
 
 mark :: [Todo] -> Text -> Either Error ActionSuccess
 mark [] _ = Left "Error, empty list, bro!"
-mark todos nStr = fmap (markHelper todos) (readEither nStr)
+mark todos nStr = either (Left . pack) (markHelper todos . fst) (decimal nStr)
 
 -- fmap :: (a -> b) -> f a -> f b 
 
@@ -77,7 +80,7 @@ priority = undefined
 
 showAction :: Action -> Text
 showAction Action { actionCommand, actionExample } =
-  actionCommand ++ " - eg: " ++ actionExample
+  T.concat [actionCommand, " - eg: ", actionExample]
 
 matchesAction :: Action -> Text -> Bool
 matchesAction Action { actionCommand } command = actionCommand == command
@@ -89,8 +92,8 @@ findAction (action : xs) command =
   if matchesAction action command then Just action else findAction xs command
 
 parseAction :: [Action] -> Text -> (Text, Maybe Action)
-parseAction actions command = (unwords rest, findAction actions cmd)
-  where (cmd : rest) = words command
+parseAction actions command = (T.concat rest, findAction actions cmd)
+  where (cmd : rest) = T.words command
 
 runAction :: Maybe Action -> [Todo] -> Text -> IO [Todo]
 runAction Nothing todos _ = runActionHelper "Invalid action" todos
@@ -105,8 +108,8 @@ runActionHelper s todos = putStrLn s >> return todos
 
 runner :: ([Todo] -> IO ()) -> [Todo] -> IO ()
 runner saveTodos todos = do
-  putStrLn $ "\n" ++ showTodos todos
-  putStrLn $ unlines $ map showAction actions
+  putStrLn $ T.concat ["\n", showTodos todos]
+  putStrLn $ T.unlines $ map showAction actions
   command <- getLine
   let (rest, a) = parseAction actions command
   newTodos <- runAction a todos rest
@@ -124,6 +127,5 @@ saveTodosToFile path = writeFile path . serializeTodos
 
 main :: IO ()
 main = do
-  h <- openFile "todos.txt" ReadMode
-  content <- hGetContents h
+  content <- readFile "todos.txt"
   runner (saveTodosToFile "todos.txt") (parseTodos content)
