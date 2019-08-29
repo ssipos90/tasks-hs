@@ -1,53 +1,53 @@
-{-# LANGUAGE OverloadedStrings, NamedFieldPuns #-}
-
 module Main where
 
-import           Text.Read                      ( readEither )
-import           System.IO
-import           Data.Char                      ( digitToInt )
-import           Data.Either                    ( isLeft, fromLeft, fromRight )
-import           Data.List                      ( take, drop )
+import           Protolude
 import           Control.Monad                  ((>=>))
+import           Data.Either                    ( isLeft, fromLeft, fromRight )
+import           Data.List                      ( (!!) )
+import           Data.Char                      ( digitToInt )
+import           Text.Read                      ( readEither )
+import           Data.Text                      ( words, unwords, lines, unlines )
+import           System.IO                      ( hGetContents )
 
-data ActionSuccess = ActionSuccess String [Todo]
-type Error = String
-type ActionFn = [Todo] -> String -> Either Error ActionSuccess
+data ActionSuccess = ActionSuccess Text [Todo]
+type Error = Text
+type ActionFn = [Todo] -> Text -> Either Error ActionSuccess
 
-data Todo = Todo { todoTask :: String
+data Todo = Todo { todoTask :: Text
                  , todoDone :: Bool
                  } deriving (Show)
 
-data Action = Action { actionCommand :: String
+data Action = Action { actionCommand :: Text
                      , actionFn :: ActionFn
-                     , actionExample :: String
+                     , actionExample :: Text
                      }
 
-serializeTodos :: [Todo] -> String
+serializeTodos :: [Todo] -> Text
 serializeTodos = unlines . map serializeTodo
 
-serializeTodo :: Todo -> String
+serializeTodo :: Todo -> Text
 serializeTodo Todo { todoTask, todoDone } = undefined
 
-showTodo :: Todo -> String
+showTodo :: Todo -> Text
 showTodo Todo { todoTask, todoDone } = "[" ++ showDone todoDone ++ "] " ++ todoTask
 
-showTodos :: [Todo] -> String
+showTodos :: [Todo] -> Text
 showTodos = unlines . map (\(n, todo) -> show n ++ ". " ++ showTodo todo) . zip [1..]
 
-showDone :: Bool -> String
+showDone :: Bool -> Text
 showDone False = " "
 showDone True = "x"
 
-parseTodo :: String -> Todo
+parseTodo :: Text -> Todo
 parseTodo (d : _ : task) = Todo task (d == '1')
 
-parseTodos :: String -> [Todo]
+parseTodos :: Text -> [Todo]
 parseTodos = map parseTodo . lines
 
-create :: [Todo] -> String -> Either Error ActionSuccess
+create :: [Todo] -> Text -> Either Error ActionSuccess
 create todos params = Right (ActionSuccess "created task" (todos ++ [Todo { todoTask = params, todoDone = False }]))
 
-mark :: [Todo] -> String -> Either Error ActionSuccess
+mark :: [Todo] -> Text -> Either Error ActionSuccess
 mark [] _ = Left "Error, empty list, bro!"
 mark todos nStr = fmap (markHelper todos) (readEither nStr)
 
@@ -69,30 +69,30 @@ fuuu k (Right todo) todos = Right(take k todos ++ [todo] ++ drop (k+1) todos)
 markTodo :: Bool -> Todo -> Either Error Todo
 markTodo as (Todo task done) = if done == as then Left "Noop!" else Right Todo { todoTask=task, todoDone=as }
 
-unmark :: [Todo] -> String -> Either Error ActionSuccess
+unmark :: [Todo] -> Text -> Either Error ActionSuccess
 unmark = undefined
 
-priority :: [Todo] -> String -> Either Error ActionSuccess
+priority :: [Todo] -> Text -> Either Error ActionSuccess
 priority = undefined
 
-showAction :: Action -> String
+showAction :: Action -> Text
 showAction Action { actionCommand, actionExample } =
   actionCommand ++ " - eg: " ++ actionExample
 
-matchesAction :: Action -> String -> Bool
+matchesAction :: Action -> Text -> Bool
 matchesAction Action { actionCommand } command = actionCommand == command
 
-findAction :: [Action] -> String -> Maybe Action
+findAction :: [Action] -> Text -> Maybe Action
 
 findAction [] _ = Nothing
 findAction (action : xs) command =
   if matchesAction action command then Just action else findAction xs command
 
-parseAction :: [Action] -> String -> (String, Maybe Action)
+parseAction :: [Action] -> Text -> (Text, Maybe Action)
 parseAction actions command = (unwords rest, findAction actions cmd)
   where (cmd : rest) = words command
 
-runAction :: Maybe Action -> [Todo] -> String -> IO [Todo]
+runAction :: Maybe Action -> [Todo] -> Text -> IO [Todo]
 runAction Nothing todos _ = runActionHelper "Invalid action" todos
 runAction (Just Action{actionFn}) todos params =
   either
@@ -100,7 +100,7 @@ runAction (Just Action{actionFn}) todos params =
     (\(ActionSuccess msg todos) -> runActionHelper msg todos)
     $ actionFn todos params
 
-runActionHelper :: String -> [Todo] -> IO [Todo]
+runActionHelper :: Text -> [Todo] -> IO [Todo]
 runActionHelper s todos = putStrLn s >> return todos
 
 runner :: ([Todo] -> IO ()) -> [Todo] -> IO ()
