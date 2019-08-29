@@ -48,19 +48,20 @@ create todos params = Right (ActionSuccess "created task" (todos ++ [Todo { todo
 
 mark :: [Todo] -> String -> Either Error ActionSuccess
 mark [] _ = Left "Error, empty list, bro!"
-mark todos nStr = either Left (markHelper todos) (readEither nStr)
+mark todos nStr = either Left (fmap (ActionSuccess "E gata, ah?") . markHelper todos) (readEither nStr)
+                where markHelper todos n = updateTodoAt n (markTodo True) todos
 
-markHelper :: [Todo] -> Int -> Either Error ActionSuccess
-markHelper todos n = either Left (ActionSuccess "E gata, ah?") (updateTodoAt n (markTodo True) todos)
-
-updateTodoAt :: Int -> (Todo -> Todo) -> [Todo] -> Either Error [Todo]
+updateTodoAt :: Int -> (Todo -> Either Error Todo) -> [Todo] -> Either Error [Todo]
 updateTodoAt k fn todos
-                | n < 1 = Left "Must be a strict positive, bruh!"
-                | n > length todos = Left "Where are you goin, mate?"
-                | otherwise = take (k-1) ++ fn!!(k-1) ++ drop k-1
+                | k < 1 = Left "Must be a strict positive, bruh!"
+                | k > length todos = Left "Where are you goin, mate?"
+                | otherwise = either Left (applyActionOnTodo todos k) (fn (todos!!(k-1)))
+
+applyActionOnTodo :: [Todo] -> Int -> Todo -> Either Error [Todo]
+applyActionOnTodo todos k todo = Right(take k todos ++ [todo] ++ drop (k+1) todos)
 
 markTodo :: Bool -> Todo -> Either Error Todo
-markTodo as (Todo task done) = if done == as then Left "Noop!" else Todo task as
+markTodo as (Todo task done) = if done == as then Left "Noop!" else Right (Todo task as)
 
 unmark :: [Todo] -> String -> Either Error ActionSuccess
 unmark = undefined
@@ -116,7 +117,13 @@ saveTodosToFile :: FilePath -> [Todo] -> IO ()
 saveTodosToFile path = writeFile path . serializeTodos
 
 main :: IO ()
+-- main = do
+--   h <- openFile "todos.txt" ReadMode
+--   content <- hGetContents h
+--   hClose h
+--   runner (saveTodosToFile "todos.txt") (parseTodos content)
 main = do
-  h <- openFile "todos.txt" ReadMode
+  h <- openFile "range.txt" ReadMode
   content <- hGetContents h
-  runner (saveTodosToFile "todos.txt") (parseTodos content)
+  mapM_ putStrLn $ lines content
+  hClose h
