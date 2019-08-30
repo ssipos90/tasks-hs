@@ -1,3 +1,7 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Main where
 import           Protolude
 import           App          ( runner, saveTodosToFile, parseTodos)
