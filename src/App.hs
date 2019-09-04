@@ -5,7 +5,7 @@
 module App where
 
   import           Protolude
-  import           Control.Monad                  ((>=>))
+  import           Control.Monad                  ((>=>), fail)
   import           Data.Char                      ( digitToInt )
   import           Data.Either                    ( isLeft, fromLeft, fromRight, rights )
   import           Data.List                      ( (!!) )
@@ -74,16 +74,12 @@ module App where
     | otherwise = Right Todo { todoTask=task, todoDone=as }
 
   updateTodoAt :: Int -> (Todo -> Either Error Todo) -> [Todo] -> Either Error [Todo]
-  updateTodoAt position fn todos
-                  | n < 0 = Left "Must be a strict positive, bruh!"
-                  | n >= length todos = Left "Out of bounds?"
-                  | otherwise = fn (todos!!n)
-                                >>= (\todo -> Right(take n todos ++ [todo] ++ drop (n+1) todos))
-                  where n = position - 1
-
-  fuu :: Bool -> Error -> Maybe Error
-  fuu True e = Just e
-  fuu False _ = Nothing
+  updateTodoAt position fn todos = do
+                  when (n < 0) (fail "Must be a strict positive, bruh!")
+                  when (n >= length todos) (fail "Out of bounds?")
+                  todo <- fn (todos !! n)
+                  return $ take n todos ++ [todo] ++ drop (n+1) todos
+                where n = position - 1
 
   showAction :: Action -> Text
   showAction Action { actionCommand, actionExample } =
