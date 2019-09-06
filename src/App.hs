@@ -29,7 +29,11 @@ module App where
                        , actionFn :: ActionFn
                        , actionExample :: Text
                        }
-  
+
+  err :: Bool -> Error -> Either Error ()
+  err True e = Left e
+  err False _ = Right ()
+    
   serializeTodos :: [Todo] -> Text
   serializeTodos = T.unlines . map serializeTodo
   
@@ -74,12 +78,10 @@ module App where
     | otherwise = Right Todo { todoTask=task, todoDone=as }
 
   updateTodoAt :: Int -> (Todo -> Either Error Todo) -> [Todo] -> Either Error [Todo]
-  updateTodoAt position fn todos = do
-                  when (n < 0) (fail "Must be a strict positive, bruh!")
-                  when (n >= length todos) (fail "Out of bounds?")
-                  todo <- fn (todos !! n)
-                  return $ take n todos ++ [todo] ++ drop (n+1) todos
-                where n = position - 1
+  updateTodoAt position fn todos = err (n < 0) "Must be a strict positive, bruh!"
+                                 *> err (n >= length todos) "Out of bounds?"
+                                 *> ((\todo -> take n todos ++ [todo] ++ drop (n+1) todos) <$> fn (todos !! n))
+                        where n = position - 1
 
   showAction :: Action -> Text
   showAction Action { actionCommand, actionExample } =
