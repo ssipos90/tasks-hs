@@ -33,7 +33,7 @@ module App where
   err :: Bool -> Error -> Either Error ()
   err True e = Left e
   err False _ = Right ()
-    
+
   serializeTodos :: [Todo] -> Text
   serializeTodos = T.unlines . map serializeTodo
   
@@ -89,7 +89,7 @@ module App where
   
   parseAction :: [Action] -> Text -> (Text, Maybe Action)
   parseAction _ "" = ("", Nothing)
-  parseAction actions str = (T.concat args, find (\Action {actionCommand} -> actionCommand == command) actions)
+  parseAction actions str = (T.unwords args, find (\Action {actionCommand} -> actionCommand == command) actions)
     where (command : args) = T.words str 
   
   runAction :: Maybe Action -> [Todo] -> Text -> IO [Todo]
