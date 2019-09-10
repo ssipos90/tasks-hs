@@ -52,19 +52,19 @@ module App where
   
   serializeTodo :: Todo -> Text
   serializeTodo Todo{ todoTask, todoAddedAt, todoFinishedAt } =
-                  T.concat [ show todoAddedAt, ":", finishedAt, ":", todoTask]
+                  show todoAddedAt <> ":" <> finishedAt <> ":" <> todoTask
               where finishedAt = case todoFinishedAt of
                                   Nothing -> ""
                                   Just t  -> show t
   
   showTodo :: Todo -> Text
-  showTodo Todo { todoTask, todoFinishedAt } = T.concat ["[", done, "] ", todoTask]
+  showTodo Todo { todoTask, todoFinishedAt } = "[" <> done <> "] " <> todoTask
                       where done = case todoFinishedAt of
                                   Just _ -> "x"
                                   Nothing -> " "
   
   showTodos :: [Todo] -> Text
-  showTodos = T.unlines . zipWith (\k todo -> T.concat [show k, ". ", showTodo todo]) [1..]
+  showTodos = T.unlines . zipWith (\k todo -> show k <> ". " <> showTodo todo) [1..]
 
   parseTodo :: Text -> Either Error Todo
   parseTodo str = either (Left . show) (Right . helper) (TM.runParser (taskSequence <* TM.eof) "" str)
@@ -95,7 +95,7 @@ module App where
   markTodo :: Timestamp -> Todo -> Either Error Todo
   markTodo ts Todo{todoTask, todoAddedAt, todoFinishedAt} = case todoFinishedAt of
                           Nothing -> Right Todo { todoTask, todoAddedAt, todoFinishedAt = Just ts }
-                          Just oldTs -> Left $ T.concat ["Already finished at ", show oldTs, "!"]
+                          Just oldTs -> Left $ "Already finished at " <> show oldTs <> "!"
 
   unmarkTodo :: Timestamp -> Todo -> Either Error Todo
   unmarkTodo ts Todo{todoTask, todoAddedAt, todoFinishedAt} = case todoFinishedAt of
@@ -109,7 +109,7 @@ module App where
                               where n = position - 1
 
   showAction :: Action -> Text
-  showAction Action { actionCommand, actionExample } = T.concat [actionCommand, " - eg: ", actionExample]
+  showAction Action { actionCommand, actionExample } = actionCommand <> " - eg: " <> actionExample
   
   parseAction :: [Action] -> Text -> (Text, Maybe Action)
   parseAction _ "" = ("", Nothing)
@@ -135,7 +135,7 @@ module App where
 
   innerRunner :: ([Todo] -> IO ()) -> [Todo] -> IO ()
   innerRunner saveTodos todos = do
-    putStrLn $ T.concat ["\n", showTodos todos]
+    putStrLn $ "\n" <> showTodos todos
     putStrLn $ T.unlines $ map showAction actions
     command <- getLine
     let (params, action) = parseAction actions command
