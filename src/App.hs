@@ -10,7 +10,7 @@ module App where
   import           Data.Either                    ( isLeft, fromLeft, fromRight, rights, partitionEithers )
   import           Data.List                      ( (!!) )
   import qualified Data.Text                      as T
-  import           Data.Text.IO                   ( readFile )
+  import qualified Data.Text.IO                   as TIO
   import           Data.Text.Read                 ( decimal )
   import           Data.Void                      ( Void )
   import           System.IO                      (IO)
@@ -22,134 +22,137 @@ module App where
   type Parser = TM.Parsec Void Text
   type Error = Text
   type Timestamp = Int
-  type ActionFn = [Todo] -> Timestamp -> Text -> Either Error ActionSuccess
+  type ActionFn = [Task] -> Timestamp -> Text -> Either Error ActionSuccess
 
-  data ActionSuccess = ActionSuccess Text [Todo]
-  data Todo = Todo { todoTask :: Text
-                   , todoAddedAt :: Timestamp
-                   , todoFinishedAt :: Maybe Timestamp
-                   } deriving (Show)
+  data ActionSuccess = ActionSuccess Text [Task]
+  data Task = Task { taskTask :: Text
+                    , taskAddedAt :: Timestamp
+                    , taskFinishedAt :: Maybe Timestamp
+                    } deriving (Show)
 
   data Action = Action { actionCommand :: Text
-                       , actionFn :: ActionFn
-                       , actionExample :: Text
-                       }
-                       
+                        , actionFn :: ActionFn
+                        , actionExample :: Text
+                        }
+                        
   taskSequence :: Parser (Timestamp, Maybe Timestamp, Text)
   taskSequence = (,,)  <$> (L.decimal :: Parser Timestamp)
-                       <* TMC.char ':'
-                       <*> TM.optional (TM.try L.decimal :: Parser Timestamp)
-                       <* TMC.char ':'
-                       <*> (T.pack <$> (TM.some (TM.satisfy (const True)) :: Parser [Char]))
-                       <*  TM.eof
+                        <* TMC.char ':'
+                        <*> TM.optional (TM.try L.decimal :: Parser Timestamp)
+                        <* TMC.char ':'
+                        <*> (T.pack <$> (TM.some (TM.satisfy (const True)) :: Parser [Char]))
+                        <*  TM.eof
 
   err :: Bool -> Error -> Either Error ()
   err True e = Left e
   err False _ = Right ()
 
-  serializeTodos :: [Todo] -> Text
-  serializeTodos = T.unlines . map serializeTodo
-  
-  serializeTodo :: Todo -> Text
-  serializeTodo Todo{ todoTask, todoAddedAt, todoFinishedAt } =
-                  show todoAddedAt <> ":" <> finishedAt <> ":" <> todoTask
-              where finishedAt = case todoFinishedAt of
+  serializeTasks :: [Task] -> Text
+  serializeTasks = T.unlines . map serializeTask
+
+  serializeTask :: Task -> Text
+  serializeTask Task{ taskTask, taskAddedAt, taskFinishedAt } =
+                  T.concat [ show taskAddedAt, ":", finishedAt, ":", taskTask]
+              where finishedAt = case taskFinishedAt of
                                   Nothing -> ""
                                   Just t  -> show t
-  
-  showTodo :: Todo -> Text
-  showTodo Todo { todoTask, todoFinishedAt } = "[" <> done <> "] " <> todoTask
-                      where done = case todoFinishedAt of
+
+  showTask :: Task -> Text
+  showTask Task { taskTask, taskFinishedAt } = T.concat ["[", done, "] ", taskTask]
+                      where done = case taskFinishedAt of
                                   Just _ -> "x"
                                   Nothing -> " "
-  
-  showTodos :: [Todo] -> Text
-  showTodos = T.unlines . zipWith (\k todo -> show k <> ". " <> showTodo todo) [1..]
 
-  parseTodo :: Text -> Either Error Todo
-  parseTodo str = either (Left . show) (Right . helper) (TM.runParser (taskSequence <* TM.eof) "" str)
-                    where helper (addedAt, finishedAt, task) = Todo task addedAt finishedAt
+  showTasks :: [Task] -> Text
+  showTasks = T.unlines . zipWith (\k task -> T.concat [show k, ". ", showTask task]) [1..]
 
-  parseTodos :: Text -> [Either Error Todo]
-  parseTodos = map parseTodo . T.lines
-  
-  create :: [Todo] -> Timestamp -> Text -> Either Error ActionSuccess
-  create todos now params = Right (ActionSuccess "created task" (todos ++ [Todo { todoTask = params, todoAddedAt = now, todoFinishedAt = Nothing }]))
-  
-  mark :: [Todo] -> Timestamp -> Text -> Either Error ActionSuccess
-  mark [] _ _ = Left "Error, empty list, bro!"
-  mark todos ts nStr = either (Left . T.pack) helper (decimal nStr)
-                      where helper a = ActionSuccess "Finished, ah?" <$> updateTodoAt (fst a) (markTodo ts) todos
+  parseTask :: Text -> Either Error Task
+  parseTask str = either (Left . show) (Right . helper) (TM.runParser (taskSequence <* TM.eof) "" str)
+                    where helper (addedAt, finishedAt, task) = Task task addedAt finishedAt
 
-  unmark :: [Todo] -> Timestamp -> Text -> Either Error ActionSuccess
-  unmark [] _ _ = Left "Error, empty list, bro!"
-  unmark todos ts nStr = either (Left . T.pack) helper (decimal nStr)
-                      where helper a = ActionSuccess "Finished, ah?" <$> updateTodoAt (fst a) (unmarkTodo ts) todos
-  
-  -- markToggle :: [Todo] -> Timestamp -> Text -> Either Error ActionSuccess
-  -- markToggle todos ts params = err (null todos) "Error, empty list, bro!"
-  --                       *> either (Left . T.pack) (Right . fst) (decimal params)
-  --                       >>= (\idx -> ActionSuccess "Finished, ah?"
-  --                                 <$> updateTodoAt idx (unmarkTodo ts) todos)
-                        
-  markTodo :: Timestamp -> Todo -> Either Error Todo
-  markTodo ts Todo{todoTask, todoAddedAt, todoFinishedAt} = case todoFinishedAt of
-                          Nothing -> Right Todo { todoTask, todoAddedAt, todoFinishedAt = Just ts }
-                          Just oldTs -> Left $ "Already finished at " <> show oldTs <> "!"
+  parseTasks :: Text -> [Either Error Task]
+  parseTasks = map parseTask . T.lines
 
-  unmarkTodo :: Timestamp -> Todo -> Either Error Todo
-  unmarkTodo ts Todo{todoTask, todoAddedAt, todoFinishedAt} = case todoFinishedAt of
-                          Just oldTs -> Right Todo { todoTask, todoAddedAt, todoFinishedAt = Nothing }
-                          Nothing -> Left "Already in progress."
+  create :: [Task] -> Timestamp -> Text -> Either Error ActionSuccess
+  create tasks now params = Right (ActionSuccess "created task" (tasks ++ [Task { taskTask = params, taskAddedAt = now, taskFinishedAt = Nothing }]))
 
-  updateTodoAt :: Int -> (Todo -> Either Error Todo) -> [Todo] -> Either Error [Todo]
-  updateTodoAt position fn todos = err (n < 0) "Must be a strict positive, bruh!"
-                                 *> err (n >= length todos) "Out of bounds?"
-                                 *> ((\todo -> take n todos ++ [todo] ++ drop (n+1) todos) <$> fn (todos !! n))
+  listIsEmpty = Left "Error, empty list, bro!"
+
+  mark :: [Task] -> Timestamp -> Text -> Either Error ActionSuccess
+  mark [] _ _ = listIsEmpty
+  mark tasks ts nStr = either (Left . T.pack) helper (decimal nStr)
+                      where helper a = ActionSuccess "Finished, ah?" <$> updateTaskAt (fst a) (markTask ts) tasks
+                            markTask ts Task{taskTask, taskAddedAt, taskFinishedAt} = case taskFinishedAt of
+                              Nothing -> Right Task { taskTask, taskAddedAt, taskFinishedAt = Just ts }
+                              Just oldTs -> Left $ T.concat ["Already finished at ", show oldTs, "!"]
+
+  unmark :: [Task] -> Timestamp -> Text -> Either Error ActionSuccess
+  unmark [] _ _ = listIsEmpty
+  unmark tasks ts nStr = either (Left . T.pack) helper (decimal nStr)
+                      where helper a = ActionSuccess "Whoopsie" <$> updateTaskAt (fst a) (unmarkTask ts) tasks
+                            unmarkTask ts Task{taskTask, taskAddedAt, taskFinishedAt} = case taskFinishedAt of
+                              Nothing -> Left "Already in progress."
+                              Just _ -> Right Task { taskTask, taskAddedAt, taskFinishedAt = Nothing }
+
+  remove :: [Task] -> Timestamp -> Text -> Either Error ActionSuccess
+  remove [] _ _ = listIsEmpty
+  remove tasks ts nStr = either (Left . T.pack) (helper . fst) (decimal nStr)
+                        where helper p = Right $ ActionSuccess "Removed" $ take (p - 1) tasks ++ drop p tasks
+
+  updateTaskAt :: Int -> (Task -> Either Error Task) -> [Task] -> Either Error [Task]
+  updateTaskAt position fn tasks = err (n < 0) "Must be a strict positive, bruh!"
+                                  *> err (n >= length tasks) "Out of bounds?"
+                                  *> ((\task -> take n tasks ++ [task] ++ drop (n+1) tasks) <$> fn (tasks !! n))
                               where n = position - 1
 
   showAction :: Action -> Text
-  showAction Action { actionCommand, actionExample } = actionCommand <> " - eg: " <> actionExample
-  
-  parseAction :: [Action] -> Text -> (Text, Maybe Action)
-  parseAction _ "" = ("", Nothing)
-  parseAction actions str = (T.unwords args, find predicate actions)
-    where (command : args) = T.words str
-          predicate Action {actionCommand} = actionCommand == command
-  
-  runAction :: ActionFn -> [Todo] -> Text -> IO (Either Error ActionSuccess)
-  runAction actionFn todos params =
-                              round 
-                              <$> Data.Time.Clock.POSIX.getPOSIXTime 
-                              >>= (\now -> return $ actionFn todos now params)
-  
-  runner :: ([Todo] -> IO ()) -> [Either Error Todo] -> IO ()
-  runner saveTodos eitherTodos = do
-    let (errors, todos) = partitionEithers eitherTodos
-    putStrLn $ T.unlines errors
-    innerRunner saveTodos todos
+  showAction Action { actionCommand, actionExample } = T.concat [actionCommand, " - eg: ", actionExample]
 
-  postActionHandler :: ([Todo] -> IO ()) -> [Todo] -> Either Error ActionSuccess -> IO [Todo]
-  postActionHandler _ todos (Left e)  = putStrLn e >> return todos
-  postActionHandler saveTodos _ (Right (ActionSuccess msg todos)) = putStrLn msg >> saveTodos todos >> return todos
+  parseAction :: Text -> State TasksState (Text, Maybe Action)
+  parseAction "" = return ("", Nothing)
+  parseAction  str = do
+    TasksState {actions} <- get
+    let (command : args) = T.words str
+    let predicate Action {actionCommand} = actionCommand == command
+    return (T.unwords args, find predicate actions)
 
-  innerRunner :: ([Todo] -> IO ()) -> [Todo] -> IO ()
-  innerRunner saveTodos todos = do
-    putStrLn $ "\n" <> showTodos todos
-    putStrLn $ T.unlines $ map showAction actions
-    command <- getLine
-    let (params, action) = parseAction actions command
+  postActionHandler :: ([Task] -> IO ()) -> [Task] -> Either Error ActionSuccess -> IO [Task]
+  postActionHandler _ tasks (Left e)  = putStrLn e >> return tasks
+  postActionHandler saveTasks _ (Right (ActionSuccess msg tasks)) = putStrLn msg >> saveTasks tasks >> return tasks
+
+  data TasksState = TasksState
+                  { tasks:: [Task]
+                  , actions :: [Action]
+                  }
+
+  runAction :: ActionFn -> Text -> StateT TasksState IO ()
+  runAction actionFn params = do
+    now <- round <$> liftIO Data.Time.Clock.POSIX.getPOSIXTime
+    currentState <- get
+    case actionFn (tasks currentState) now params of
+      Left e -> liftIO $ TIO.putStrLn e
+      Right (ActionSuccess message tasks) -> do
+        put (currentState { tasks })
+        liftIO $ TIO.putStrLn message
+
+  runner :: StateT TasksState IO ()
+  runner = forever $ do
+    TasksState { actions, tasks } <- get
+    liftIO $ TIO.putStrLn $ showTasks tasks
+    liftIO $ TIO.putStrLn $ T.unlines $ map showAction actions
+    commandStr <- liftIO getLine
+    (params, action) <- state . runState $ parseAction commandStr
     case action of
-      Nothing -> putStrLn ("Unkown action" :: Text) >> innerRunner saveTodos todos
-      Just Action{actionFn} -> runAction actionFn todos params
-                                >>= postActionHandler saveTodos todos
-                                >>= innerRunner saveTodos
-    where
-      actions =
-        [ Action "create"   create   "create Fuuuu your mum...."
-        , Action "mark"     mark     "mark x"
-        , Action "unmark"   unmark   "unmark x"
-        ]
-  
-  saveTodosToFile :: FilePath -> [Todo] -> IO ()
-  saveTodosToFile path = writeFile path . serializeTodos
+      Nothing -> liftIO $ TIO.putStrLn "Unknown action\n"
+      Just Action{actionFn} -> runAction actionFn params
+    return ()
+
+  initialState :: [Task] -> TasksState
+  initialState tasks = TasksState { tasks
+                                  , actions = [ Action "create"   create   "create Fuuuu your mum...."
+                                            , Action "mark"     mark     "mark x"
+                                            , Action "unmark"   unmark   "unmark x"
+                                            , Action "remove"   remove   "remove x"
+                                            ]
+                                  }
+

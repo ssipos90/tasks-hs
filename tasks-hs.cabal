@@ -1,20 +1,18 @@
-name:                todos-hs
+name:                tasks-hs
 version:             0.1.0.0
--- synopsis:
--- description:
-homepage:            https://github.com/githubuser/todos-hs#readme
+homepage:            https://github.com/ssipos90/tasks-hs#readme
 license:             BSD3
 license-file:        LICENSE
-author:              Author name here
-maintainer:          example@example.com
-copyright:           2019 Author name here
-category:            Web
+author:              Sebastian Sipos
+maintainer:          sebastiansipos90@gmail.com
+copyright:           2020 Sebastian Sipos
+category:            CLI
 build-type:          Simple
 cabal-version:       >=1.10
 extra-source-files:  README.md
                    , src/App.hs
 
-executable todos-hs
+executable tasks-hs
   hs-source-dirs:      src
   main-is:             Main.hs
   default-language:    Haskell2010
