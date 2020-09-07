@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
 import           Protolude
@@ -8,15 +7,16 @@ import           App                            ( parseTasks, runner, initialSta
 import qualified Data.Text                      as T
 import           System.IO                      ( IO )
 
-file :: FilePath
-file = "tasks.txt"
+defaultFile :: FilePath
+defaultFile = "tasks.txt"
 
 main :: IO ()
 main = do
-  content <- readFile file
-  let (errors, tasks) = partitionEithers $ parseTasks content
-  putStrLn $ case length errors of
-     0 -> "no errors\n"
-     _ -> "errors: " <> T.unlines errors <> "\n"
-  runStateT runner (initialState tasks)
-  return ()
+   args <- getArgs
+   content <- readFile $ fromMaybe defaultFile $ head args
+   let (errors, tasks) = partitionEithers $ parseTasks content
+   putStrLn $ case length errors of
+      0 -> "no errors\n"
+      _ -> "errors: " <> T.unlines errors <> "\n"
+   runStateT runner (initialState tasks)
+   return ()

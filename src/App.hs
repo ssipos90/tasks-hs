@@ -52,19 +52,19 @@ serializeTasks = T.unlines . map serializeTask
 
 serializeTask :: Task -> Text
 serializeTask Task{ taskTask, taskAddedAt, taskFinishedAt } =
-                T.concat [ show taskAddedAt, ":", finishedAt, ":", taskTask]
+                show taskAddedAt <> ":" <> finishedAt <> ":" <> taskTask
             where finishedAt = case taskFinishedAt of
                                 Nothing -> ""
                                 Just t  -> show t
 
 showTask :: Task -> Text
-showTask Task { taskTask, taskFinishedAt } = T.concat ["[", done, "] ", taskTask]
+showTask Task { taskTask, taskFinishedAt } = "[" <> done <> "] " <> taskTask
                     where done = case taskFinishedAt of
                                 Just _ -> "x"
                                 Nothing -> " "
 
 showTasks :: [Task] -> Text
-showTasks = T.unlines . zipWith (\k task -> T.concat [show k, ". ", showTask task]) [1..]
+showTasks = T.unlines . map showTask
 
 parseTask :: Text -> Either Error Task
 parseTask str = either (Left . show) (Right . helper) (TM.runParser (taskSequence <* TM.eof) "" str)
@@ -84,7 +84,7 @@ mark tasks ts nStr = either (Left . T.pack) helper (decimal nStr)
                     where helper a = ActionSuccess "Finished, ah?" <$> updateTaskAt (fst a) (markTask ts) tasks
                           markTask ts Task{taskTask, taskAddedAt, taskFinishedAt} = case taskFinishedAt of
                             Nothing -> Right Task { taskTask, taskAddedAt, taskFinishedAt = Just ts }
-                            Just oldTs -> Left $ T.concat ["Already finished at ", show oldTs, "!"]
+                            Just oldTs -> Left ( "Already finished at " <> show oldTs <> "!" :: Text )
 
 unmark :: [Task] -> Timestamp -> Text -> Either Error ActionSuccess
 unmark [] _ _ = listIsEmpty
@@ -106,7 +106,7 @@ updateTaskAt position fn tasks = err (n < 0) "Must be a strict positive, bruh!"
                             where n = position - 1
 
 showAction :: Action -> Text
-showAction Action { actionCommand, actionExample } = T.concat [actionCommand, " - eg: ", actionExample]
+showAction Action { actionCommand, actionExample } = actionCommand <> " - eg: " <> actionExample
 
 parseAction :: Text -> State TasksState (Text, Maybe Action)
 parseAction "" = return ("", Nothing)
@@ -150,8 +150,8 @@ runner = forever $ do
 initialState :: [Task] -> TasksState
 initialState tasks = TasksState { tasks
                                 , actions = [ Action "create"   create   "create Fuuuu your mum...."
-                                          , Action "mark"     mark     "mark x"
-                                          , Action "unmark"   unmark   "unmark x"
-                                          , Action "remove"   remove   "remove x"
-                                          ]
+                                            , Action "mark"     mark     "mark x"
+                                            , Action "unmark"   unmark   "unmark x"
+                                            , Action "remove"   remove   "remove x"
+                                            ]
                                 }

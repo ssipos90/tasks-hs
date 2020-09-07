@@ -1,0 +1,4 @@
+1599512468:1599512468:refactor to use state monad (transformer)
+1599512468::subtasks
+1599512468::use JSON or YAML
+1599512468::use arrows or (micro) lenses
