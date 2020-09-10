@@ -15,6 +15,8 @@ extra-source-files:  README.md
 executable tasks-hs
   hs-source-dirs:      src
   main-is:             Main.hs
+  extensions:
+    - OverloadedStrings
   default-language:    Haskell2010
   other-modules:       App
   build-depends:       base >= 4.7 && < 5
