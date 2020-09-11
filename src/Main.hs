@@ -1,22 +1,23 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE NoImplicitPrelude #-}
 
 module Main where
-import           Protolude
-import           App                            ( parseTasks, runner, initialState, showTask )
-import qualified Data.Text                      as T
-import           System.IO                      ( IO )
+
+import App (initialState, parseTasks, runner, showTask)
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.Text as T
+import Protolude
+import qualified System.IO as IO
 
 defaultFile :: FilePath
-defaultFile = "tasks.txt"
+defaultFile = "tasks.json"
 
 main :: IO ()
 main = do
-   args <- getArgs
-   content <- readFile $ fromMaybe defaultFile $ head args
-   let (errors, tasks) = partitionEithers $ parseTasks content
-   putStrLn $ case length errors of
-      0 -> "no errors\n"
-      _ -> "errors: " <> T.unlines errors <> "\n"
-   runStateT runner (initialState tasks)
-   return ()
+  args <- getArgs
+  let filename = fromMaybe defaultFile $ head args
+  content <- BS.readFile filename
+  case parseTasks content of
+    Left error -> putStrLn $ "Error: " <> error
+    Right tasks -> do
+          IO.hSetBuffering IO.stdin IO.NoBuffering
+          void $ runStateT (runner $ BS.writeFile filename) (initialState tasks)
