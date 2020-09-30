@@ -4,6 +4,7 @@
 module App where
 
 import Control.Monad (fail, (>=>))
+import qualified Control.Monad as CM
 import Data.Aeson (FromJSON, Options, ToJSON, defaultOptions, eitherDecode, encode, genericToJSON, object, parseJSON, toJSON, withObject, (.:), (.:?), (.=))
 import qualified Data.ByteString.Lazy as BS
 import Data.Char (digitToInt)
@@ -15,17 +16,16 @@ import Data.Text.Read (decimal)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Void (Void)
 import Protolude
-import qualified System.IO as IO
 import System.Exit (exitSuccess)
+import qualified System.IO as IO
 import qualified Text.Read as TR
-import qualified Control.Monad as CM
 
-type Error = Text
+type Error = T.Text
 
 type Timestamp = Int
 
 data Task = Task
-  { title :: Text,
+  { title :: T.Text,
     addedAt :: Timestamp,
     finishedAt :: Maybe Timestamp
   }
@@ -57,20 +57,13 @@ err :: Bool -> Error -> Either Error ()
 err True e = Left e
 err False _ = Right ()
 
-showTaskTick :: Maybe Timestamp -> Text
-showTaskTick (Just _) = "x"
-showTaskTick Nothing = " "
-
-showTask :: Task -> Text
-showTask Task {title, finishedAt} = "[" <> showTaskTick finishedAt <> "] " <> title
-
 pad :: Int -> Text -> Text
 pad n = (<>) (T.pack $ replicate n ' ')
 
-showTasks :: TaskList -> Text
-showTasks tasks = T.unlines (map (pad 2 . showTask) tasks)
-
 listIsEmpty = Left "Error, empty list, bro!"
+
+isTaskDone :: Task -> Bool
+isTaskDone Task {finishedAt = finishedAt} = isJust finishedAt
 
 updateTaskAt :: (Task -> Either Error Task) -> Int -> TaskList -> Either Error TaskList
 updateTaskAt fn position tasks
@@ -105,7 +98,7 @@ runner saver = forever $ do
     IO.hFlush IO.stdout
     return cmd
   void $ case cmd of
-    'l' -> liftIO $ putStrLn $ showTasks tasks
+    --'l' -> liftIO $ putStrLn $ showTasks tasks
     'c' -> do
       title <- liftIO TIO.getLine
       now <- round <$> liftIO Data.Time.Clock.POSIX.getPOSIXTime
@@ -127,10 +120,14 @@ runner saver = forever $ do
         Right tasks -> do
           put $ tasksState {tasks = tasks}
           liftIO $ TIO.putStrLn "Done"
-    'h' -> liftIO $ TIO.putStrLn $ T.unlines [ "c to create"
-                                             , "l to toggle mark"
-                                             , "x to toggle mark"
-                                             ]
+    'h' ->
+      liftIO $
+        TIO.putStrLn $
+          T.unlines
+            [ "c to create",
+              "l to toggle mark",
+              "x to toggle mark"
+            ]
     'q' -> do
       chr <- liftIO $ do
         TIO.putStr "Really? "
