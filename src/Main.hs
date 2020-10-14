@@ -4,13 +4,13 @@
 
 module Main where
 
-import qualified App
-import Lens.Micro
-import Lens.Micro.TH
-import Brick.AttrMap (AttrMap)
+import App
+import Lens.Micro ( (^.), over )
+import Lens.Micro.TH ( makeLensesFor )
 import qualified Brick.AttrMap as A
 import qualified Brick.Main as M
-import Brick.Types (BrickEvent, CursorLocation, EventM, Next, Widget)
+import qualified Brick.Forms as F
+import Brick.Forms ((@@=))
 import qualified Brick.Types as T
 import qualified Brick.Util as U
 import qualified Brick.Widgets.Border as B
@@ -21,6 +21,8 @@ import Brick.Widgets.Core
     vBox,
     vLimit,
     withAttr,
+    padBottom,
+    fill,
     (<+>),
   )
 import qualified Brick.Widgets.List as L
@@ -29,57 +31,82 @@ import qualified Data.Text as Tx
 import qualified Data.Vector as Vec
 import qualified Graphics.Vty as V
 import Protolude
-import qualified System.IO as IO
 
 defaultFile :: FilePath
 defaultFile = "tasks.json"
 
-data AppPage = CreatePage | ListPage
+
+data TaskField = NameField
+               | DescriptionField
+               deriving (Eq, Ord, Show)
+type CreateForm = F.Form Task () ()
+data AppPage = CreatePage CreateForm | ListPage | DetailPage
 
 data AppState = AppState
-  { _tasks :: L.List () App.Task,
-    _page :: AppPage
+  { tasks :: L.List () Task
+  , page :: AppPage
   }
 
-makeLenses ''AppState
+makeLensesFor [("tasks", "_tasks"), ("page", "_page")] ''AppState
 
-taskTitle :: App.Task -> Tx.Text
-taskTitle App.Task{ App.title } = title
+mkCreateForm :: Task -> CreateForm
+mkCreateForm = F.newForm [ label "Work" @@= F.editTextField _title () (Just 1) 
+                         ]
+               where label s w = padBottom (T.Pad 1) $
+                        (vLimit 1 $ hLimit 15 $ str s <+> fill ' ') <+> w 
 
-taskToItem :: App.Task -> Tx.Text
-taskToItem task =
-  (if App.isTaskDone task then " x " else "   ")
-    <> taskTitle task
+taskToItem task = (case isTaskDone task of
+                    True -> withAttr completedTask $ str " ✔ "
+                    False -> str "   "
+                  )
+              <+> (str $ Tx.unpack $ task ^. _title)
 
-ui :: AppState -> [Widget ()]
-ui AppState {_tasks, _page} =
-  case _page of
-    ListPage -> [L.renderList (\_ -> str . Tx.unpack . taskToItem) True _tasks]
-    CreatePage -> [C.center (str "Top") <+> B.hBorder <+> C.center (str "Bottom")]
+ui :: AppState -> [T.Widget ()]
+ui s =
+  case s ^. _page of
+    ListPage -> [L.renderList (\_ task -> taskToItem task) True (s ^. _tasks)]
+    CreatePage f -> [ F.renderForm f ]
 
-customAttr :: A.AttrName
-customAttr = L.listSelectedAttr <> "custom"
+completedTask = A.attrName "completed"
 
-theMap :: A.AttrMap
-theMap =
+attributeMap :: A.AttrMap
+attributeMap =
   A.attrMap
     V.defAttr
-    [ -- (L.listAttr, V.white `U.on` V.blue),
-      (L.listSelectedAttr, V.blue `U.on` V.black),
-      (customAttr, U.fg V.cyan)
+    [ (L.listSelectedAttr, U.fg V.blue)
+    , (completedTask, U.fg V.green) 
     ]
 
-appEvent :: AppState -> BrickEvent n e -> EventM n (Next AppState)
-appEvent s (T.VtyEvent e) =
-  let p = s ^. page
-  in
-    case e of
-      V.EvKey (V.KChar 'c') [] -> M.continue $ s {_page = CreatePage}
-      V.EvKey (V.KChar 'k') [] -> M.continue $ s {_page = ListPage}
-      V.EvKey (V.KChar 'j') [] -> M.continue $ s {_page = ListPage}
+createPageEvent :: AppState -> T.BrickEvent () e -> CreateForm -> T.EventM () (T.Next AppState)
+createPageEvent s e f = case e of
+      T.VtyEvent (V.EvKey V.KEsc []) -> M.halt s
+      e -> do
+        let nf = F.handleFormEvent e f
+        M.continue $ over _page (\_ -> nf) s
+
+listPageEvent s (T.VtyEvent e) = case e of
+      V.EvKey (V.KChar 'c') [] -> M.continue $ over _page (\_ -> 
+                                    let initialTask = Task { title = ""
+                                                            , addedAt = 0
+                                                            , finishedAt = Nothing
+                                                            }
+                                    in CreatePage $ mkCreateForm initialTask
+                             ) s
+      V.EvKey (V.KChar 'j') [] -> M.continue $ over _tasks L.listMoveDown s
+      V.EvKey (V.KChar 'k') [] -> M.continue $ over _tasks L.listMoveUp s
+      V.EvKey (V.KChar 'g') [] -> M.continue $ over _tasks (L.listMoveTo 0) s
+      V.EvKey (V.KChar 'G') [] ->
+        M.continue $ over _tasks (L.listMoveTo $ length $ s ^. _tasks) s
       V.EvKey (V.KChar _) [] -> M.continue s
-      V.EvKey V.KEsc [] -> M.halt s
-      e -> M.continue =<< L.handleListEventVi e (s ^. tasks)
+      V.EvKey _ []-> M.continue s
+
+appEvent :: AppState -> T.BrickEvent () e -> T.EventM () (T.Next AppState)
+appEvent s e =
+  case e of
+    T.VtyEvent (V.EvKey V.KEsc []) -> M.halt s
+    e -> case s ^. _page of
+            CreatePage f -> createPageEvent e f
+            ListPage -> listPageEvent s e
 
 app :: M.App AppState e ()
 app =
@@ -88,7 +115,7 @@ app =
       M.appChooseCursor = M.showFirstCursor,
       M.appHandleEvent = appEvent,
       M.appStartEvent = return,
-      M.appAttrMap = const theMap
+      M.appAttrMap = const attributeMap
     }
 
 main :: IO ()
@@ -96,7 +123,7 @@ main = do
   args <- getArgs
   let filename = fromMaybe defaultFile $ head args
   content <- BS.readFile filename
-  case App.parseTasks content of
+  case parseTasks content of
     Left error -> putStrLn $ "Error: " <> error
     Right tasks -> do
       let initialState =

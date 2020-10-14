@@ -1,24 +1,15 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module App where
+module App (Task (..), _title, isTaskDone, parseTasks) where
 
-import Control.Monad (fail, (>=>))
-import qualified Control.Monad as CM
-import Data.Aeson (FromJSON, Options, ToJSON, defaultOptions, eitherDecode, encode, genericToJSON, object, parseJSON, toJSON, withObject, (.:), (.:?), (.=))
+import Data.Aeson (FromJSON, ToJSON, eitherDecode, object, parseJSON, toJSON, withObject, (.:), (.:?), (.=))
 import qualified Data.ByteString.Lazy as BS
-import Data.Char (digitToInt)
-import Data.Either (fromLeft, fromRight, isLeft, partitionEithers, rights)
 import Data.List ((!!))
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import Data.Text.Read (decimal)
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Void (Void)
+import Lens.Micro.TH (makeLensesFor)
 import Protolude
-import System.Exit (exitSuccess)
-import qualified System.IO as IO
-import qualified Text.Read as TR
 
 type Error = T.Text
 
@@ -30,6 +21,13 @@ data Task = Task
     finishedAt :: Maybe Timestamp
   }
   deriving (Show)
+
+makeLensesFor
+  [ ("title", "_title"),
+    ("addedAt", "_addedAt"),
+    ("finishedAt", "_finishedAt")
+  ]
+  ''Task
 
 type TaskList = [Task]
 
@@ -84,61 +82,3 @@ markToggleTaskAt timestamp =
                 Just _ -> Nothing
             }
     )
-
-newtype TasksState = TasksState {tasks :: TaskList}
-
-runner :: (BS.ByteString -> IO ()) -> StateT TasksState IO ()
-runner saver = forever $ do
-  TasksState {tasks} <- get
-  cmd <- liftIO $ do
-    TIO.putStr "cmd: "
-    IO.hFlush IO.stdout
-    cmd <- IO.getChar
-    TIO.putStrLn ""
-    IO.hFlush IO.stdout
-    return cmd
-  void $ case cmd of
-    --'l' -> liftIO $ putStrLn $ showTasks tasks
-    'c' -> do
-      title <- liftIO TIO.getLine
-      now <- round <$> liftIO Data.Time.Clock.POSIX.getPOSIXTime
-      tasksState <- get
-      let task = Task {title = title, addedAt = now, finishedAt = Nothing}
-      let TasksState {tasks} = tasksState
-      put $ tasksState {tasks = tasks ++ [task]}
-    'x' -> do
-      nrStr <- liftIO $ do
-        TIO.putStr "task: "
-        IO.hFlush IO.stdout
-        IO.getLine
-      let nr = TR.read nrStr :: Int
-      now <- round <$> liftIO Data.Time.Clock.POSIX.getPOSIXTime
-      tasksState <- get
-      let TasksState {tasks} = tasksState
-      case markToggleTaskAt now nr tasks of
-        Left e -> liftIO $ TIO.putStrLn e
-        Right tasks -> do
-          put $ tasksState {tasks = tasks}
-          liftIO $ TIO.putStrLn "Done"
-    'h' ->
-      liftIO $
-        TIO.putStrLn $
-          T.unlines
-            [ "c to create",
-              "l to toggle mark",
-              "x to toggle mark"
-            ]
-    'q' -> do
-      chr <- liftIO $ do
-        TIO.putStr "Really? "
-        IO.hFlush IO.stdout
-        chr <- IO.getChar
-        TIO.putStrLn ""
-        return chr
-      CM.when (chr `elem` ['y', 'Y']) $ liftIO exitSuccess
-    _ -> liftIO $ TIO.putStrLn "h for help"
-  liftIO $ saver $ encode tasks
-  return ()
-
-initialState :: TaskList -> TasksState
-initialState tasks = TasksState {tasks}
