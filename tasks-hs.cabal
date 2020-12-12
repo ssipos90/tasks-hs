@@ -17,7 +17,7 @@ executable tasks-hs
   main-is:             Main.hs
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude
-  ghc-options:        -threaded
+  ghc-options:        -threaded -Wall -Wpartial-fields -Wincomplete-uni-patterns
   other-modules:       App
   build-depends:       base >= 4.7 && < 5
                       , aeson >= 1.4.6 && < 1.4.7
@@ -31,4 +31,3 @@ executable tasks-hs
                       , time >= 1.8.0 && < 1.9
                       , vector >= 0.12.0.3 && < 0.13
                       , vty >= 5.25.1 && < 5.26
-

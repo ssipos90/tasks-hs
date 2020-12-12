@@ -2,11 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module App (Task (..), _title, isTaskDone, parseTasks) where
+module App (Task (..), Timestamp, Error, _title, isTaskDone, parseTasks, serializeTasks, toggleTask) where
 
-import Data.Aeson (FromJSON, ToJSON, eitherDecode, object, parseJSON, toJSON, withObject, (.:), (.:?), (.=))
+import Data.Aeson (FromJSON, ToJSON, eitherDecode, encode, object, parseJSON, toJSON, withObject, (.:), (.:?), (.=))
 import qualified Data.ByteString.Lazy as BS
-import Data.List ((!!))
 import qualified Data.Text as T
 import Lens.Micro.TH (makeLensesFor)
 import Protolude
@@ -51,34 +50,16 @@ parseTasks bs = case eitherDecode bs of
   Left e -> Left $ T.pack e
   Right tasks -> Right tasks
 
-err :: Bool -> Error -> Either Error ()
-err True e = Left e
-err False _ = Right ()
-
-pad :: Int -> Text -> Text
-pad n = (<>) (T.pack $ replicate n ' ')
-
-listIsEmpty = Left "Error, empty list, bro!"
+serializeTasks :: TaskList -> BS.ByteString
+serializeTasks = encode
 
 isTaskDone :: Task -> Bool
 isTaskDone Task {finishedAt = finishedAt} = isJust finishedAt
 
-updateTaskAt :: (Task -> Either Error Task) -> Int -> TaskList -> Either Error TaskList
-updateTaskAt fn position tasks
-  | n < 0 = Left ("Must be a strict positive." :: Text)
-  | n >= length tasks = Left ("Out of bounds." :: Text)
-  | otherwise = (\task -> take n tasks ++ [task] ++ drop (n + 1) tasks) <$> fn (tasks !! n)
-  where
-    n = position - 1
 
-markToggleTaskAt :: Timestamp -> Int -> TaskList -> Either Error TaskList
-markToggleTaskAt timestamp =
-  updateTaskAt
-    ( \task ->
-        Right $
-          task
-            { finishedAt = case finishedAt task of
-                Nothing -> Just timestamp
+toggleTask :: Timestamp -> Task -> Task
+toggleTask ts task@Task{finishedAt} = task
+            { finishedAt = case finishedAt of
+                Nothing -> Just ts
                 Just _ -> Nothing
             }
-    )

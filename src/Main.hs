@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -11,8 +12,7 @@ import qualified Brick.Forms as F
 import qualified Brick.Main as M
 import qualified Brick.Types as T
 import qualified Brick.Util as U
-import qualified Brick.Widgets.Border as B
-import qualified Brick.Widgets.Center as C
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Brick.Widgets.Core
   ( fill,
     hLimit,
@@ -42,14 +42,18 @@ data TaskField
 
 type CreateForm e = F.Form Task e ()
 
-data AppPage e = CreatePage (CreateForm e) | ListPage | DetailPage
+data AppPage e = CreatePage (CreateForm e)
+               | ListPage
+
 
 data AppState e = AppState
   { tasks :: L.List () Task,
-    page :: AppPage e
+    page :: AppPage e,
+    messages :: [[Char]],
+    filepath :: [Char]
   }
 
-makeLensesFor [("tasks", "_tasks"), ("page", "_page")] ''AppState
+makeLensesFor [("messages", "_messages"), ("filepath", "_filepath"), ("tasks", "_tasks"), ("page", "_page")] ''AppState
 
 mkCreateForm :: Task -> CreateForm e
 mkCreateForm =
@@ -61,6 +65,7 @@ mkCreateForm =
       padBottom (T.Pad 1) $
         vLimit 1 (hLimit 15 $ str s <+> fill ' ') <+> w
 
+taskToItem :: Task -> T.Widget n
 taskToItem task =
   taskCheckMark
     <+> str (Tx.unpack $ task ^. _title)
@@ -73,9 +78,15 @@ taskToItem task =
 ui :: AppState e -> [T.Widget ()]
 ui s =
   case s ^. _page of
-    ListPage -> [L.renderList (\_ task -> taskToItem task) True (s ^. _tasks)]
+    ListPage -> [listUI s]
     CreatePage f -> [F.renderForm f]
 
+listUI :: AppState e -> T.Widget ()
+listUI s = vBox [ L.renderList (\_ task -> taskToItem task) True (s ^. _tasks)
+                , str $ fromMaybe "" $ head (s ^. _messages)
+                ]
+
+completedTask :: A.AttrName
 completedTask = A.attrName "completed"
 
 attributeMap :: A.AttrMap
@@ -86,32 +97,42 @@ attributeMap =
       (completedTask, U.fg V.green)
     ]
 
+initialTask :: Task
 initialTask =
   Task
     { title = "",
-      addedAt = 0,
+      addedAt = 1,
       finishedAt = Nothing
     }
 
+listPageEvent :: AppState e1 -> T.BrickEvent n e2 -> T.EventM () (T.Next (AppState e1))
 listPageEvent s (T.VtyEvent e) = case e of
   (V.EvKey V.KEsc []) -> M.halt s
   V.EvKey (V.KChar 'c') [] ->
-    M.continue $
-      over
-        _page
-        (\_ -> CreatePage $ mkCreateForm initialTask)
-        s
-  e -> do
+    M.continue $ over _page (const $ CreatePage $ mkCreateForm initialTask) s
+  V.EvKey (V.KChar 'w') [] -> do
+    liftIO $ saveTasks (s ^. _filepath) (toList $ s ^. _tasks)
+    M.continue $ over _messages ((:) "Written") s
+  V.EvKey (V.KChar ' ') [] -> do
+    ts <- round <$> (liftIO $ getPOSIXTime)
+    M.continue $ over _tasks (L.listModify (toggleTask ts)) s
+  _ -> do
     tasks <- L.handleListEventVi L.handleListEvent e (s ^. _tasks)
     M.continue $ over _tasks (const tasks) s
+listPageEvent s _ = M.continue s
 
 createPageHandler :: AppState e -> CreateForm e -> T.BrickEvent () e -> T.EventM () (T.Next (AppState e))
 createPageHandler s f e = case e of
   T.VtyEvent (V.EvKey V.KEsc []) -> M.halt s
   T.VtyEvent (V.EvKey V.KEnter []) -> do
+    -- TODO validate
+    ts <- round <$> liftIO getPOSIXTime
     let tasks = s ^. _tasks
-    M.continue $ s { tasks = L.listInsert (Vec.length $ L.listElements tasks) (F.formState f) tasks
+    let newTasks = L.listInsert (Vec.length $ L.listElements tasks) (F.formState f){ addedAt = ts } tasks
+    liftIO $ saveTasks (s ^. _filepath) (toList newTasks)
+    M.continue $ s { tasks = newTasks
                    , page = ListPage
+                   , messages = "Added and saved" : s ^. _messages
                    }
   _ -> do
     nf <- F.handleFormEvent e f
@@ -120,7 +141,7 @@ createPageHandler s f e = case e of
 handleEvent :: AppState e -> T.BrickEvent () e -> T.EventM () (T.Next (AppState e))
 handleEvent s e =
   case e of
-    T.VtyEvent (V.EvResize {}) -> M.continue s
+    T.VtyEvent V.EvResize{} -> M.continue s
     _ -> case s ^. _page of
       CreatePage f -> createPageHandler s f e
       ListPage -> listPageEvent s e
@@ -135,17 +156,22 @@ app =
       M.appAttrMap = const attributeMap
     }
 
+loadTasks :: FilePath -> IO (Either Error [Task])
+loadTasks filepath = parseTasks <$> BS.readFile filepath
+
+saveTasks :: FilePath -> [Task] -> IO ()
+saveTasks fp tasks = BS.writeFile fp $ serializeTasks tasks
+
 main :: IO ()
 main = do
   args <- getArgs
-  let filename = fromMaybe defaultFile $ head args
-  content <- BS.readFile filename
-  case parseTasks content of
-    Left error -> putStrLn $ "Error: " <> error
-    Right tasks -> do
-      let initialState =
+  let filepath = fromMaybe defaultFile $ head args
+  loadTasks filepath >>= \case
+          Left e -> putStrLn e
+          Right tasks -> void $ M.defaultMain app $
             AppState
               { tasks = L.list () (Vec.fromList tasks) 1,
-                page = ListPage
+                page = ListPage,
+                filepath = filepath,
+                messages = []
               }
-      void $ M.defaultMain app initialState
